@@ -3,15 +3,42 @@ library(car)
 library(tidyverse)
 library(lubridate)
 library(moments)
-library(todor)
+
+################################################################################
+
+#### Variablen:
+
+## Abhängige Variablen:
+# - Duration (intervallskaliert)
+# - correctRatio (verhältnisskaliert)
+# - Post-Anwtorten (dichotom, bzw. nominalskaliert)
+
+# (- wrong answers) -> sinnvoll????
+
+## Unabhängige Variablen:
+# - Condition (nominal)
+# oder alle 3: Stadt, Anwendung, Task (alle nominal)
+
+###############
+
+
+#### Fragestellungen:
+# - ist ein Proband schneller geworden, je öfter er eine Anwendung benutzt hat (grafisch plotten pro Anwendung?)
+# - unterschied bei 1. Nutzung und bei forfolgenden bzgl. der Duration? -> getrennt analysieren??
+# - Durschnitt und SD über Duration und correctRatio insgesamt und pro Teilnehmer
+# - Unterschiede bei Duration und der correctRatio für Post-Antworten (Haus am See oder OSM) ???????????????? (hängt das wirklich überhaupt zusammen?)
+# - bei welcher Anwendung schneller im Durschnitt
+# - theoretisch auch Kombis mit Task und Stadt möglich, aber hilft das was?
+# - Auswirkung der Condition allgemein auf Duration und CorrectRatio
+# - Gab es irgendjemanden, der bei einer aufgabe keinen ort mit einer anwendung gefunden hat?? Ansonsten min und max vllt?
+#####################
+
 
 ################## functions ######################
 
 descriptive_stats <- function(x){
-  list(mean = mean(x), median = median(x), variance = var(x), standard_deviation = sd(x))
+  list(min = min(x), max = max(x), mean = mean(x), median = median(x), variance = var(x), standard_deviation = sd(x))
 }
-
-fun.ct = function(d){c(mean = mean(d), variance=var(d), standard_deviation=sd(d))}
 
 calcDuration = function (start, end) {
   startInSeconds = ms(start) %>% as.numeric(.)
@@ -20,14 +47,24 @@ calcDuration = function (start, end) {
 }
 
 
+############### load data #####################
+
+pretask_answers = read.csv("./Pre-task Questionnaire(Antworten).csv")
+data = read.csv2("./data.csv")
+post_answers = read.csv2("./post_data.csv")
+
+
 ################## setup ######################
 
-##### TODO die qualitativen Daten müssen als separate Tabelle eingelesen und am besten in jeder Zelle nur OSM oder eigeneAnwendung
-post_data = read.csv2("./post_data.csv", sep=";")
-
+# remove unnecessary column from post data
 post_data_cleaned = select(post_data, -Heatmap...Maskierung)
 
-data = read.csv2("./data.csv", sep=";")
+# remove the participants 1-4 and 6-8 :(
+# and columns that only have pure qualitative data
+participants = pretask_answers %>% .[-c(1:4, 6:9),] %>% .[c(9:11)]
+pretask_cleaned = pretask_answers %>% .[-c(1:4, 6:9),] %>% .[c(2:6)]
+nrow(pretask_cleaned)  # should be 16!
+
 
 # split the condition column into 3 separate ones but also keep the old column
 splitted_condition = data %>% separate(Condition, c("Anwendung", "Stadt", "Task"), sep="-")
@@ -41,7 +78,7 @@ data$Task = lapply(data$Task, trimws)
 # add the overall places for each condition as a new column 
 data["Places.Overall"] <- NA
 data$Places.Overall[data$Stadt == "Erlangen" & data$Task == "A"] <- 3
-data$Places.Overall[data$Stadt == "Erlangen" & data$Task == "B"] <- 13
+data$Places.Overall[data$Stadt == "Erlangen" & data$Task == "B"] <- 12
 data$Places.Overall[data$Stadt == "Ingolstadt" & data$Task == "A"] <- 3
 data$Places.Overall[data$Stadt == "Ingolstadt" & data$Task == "B"] <- 8
 
@@ -65,9 +102,20 @@ merged_data = cbind(cleaned_data, select(post_data_cleaned, -Proband))
 tp1 = subset(merged_data, Proband == "1")
 tp2 = subset(merged_data, Proband == "2")
 
+# or group and calculate mean per group
+grp_tp = group_by(merged_data, Proband) %>% summarise(., avg = mean(duration), sd=sd(duration))
 
-###### TODO:
-# - ist es vllt relevant wofür sich die leute letztlich entschieden als eigene Spalte -> also osm oder eigene???
+
+
+### TODO geht erst wenn gleiche größe
+
+# add pretask knowledge
+#merged_data = cbind(merged_data, select(pretask_cleaned, Warst.du.schon.einmal.in.Erlangen., Warst.du.schon.einmal.in.Ingolstadt.)) 
+merged_data$Erlangen = pretask_cleaned$Warst.du.schon.einmal.in.Erlangen.
+merged_data$Erlangen = merged_data[merged_data$Erlangen == "Ja"] = 1
+merged_data$Erlangen = merged_data[pretask_cleaned$Warst.du.schon.einmal.in.Erlangen. == "Nein"] = 0
+
+#TODO für ingolstadt auch noch
 
 
 ################ Convert to other formats #################
@@ -93,13 +141,27 @@ nav_bind_table
 
 ################ Descriptive Statistics #################
 
+table(participants$Geschlecht)
+table(participants$Studienfach)
+descriptive_stats(participants$Alter)
+
+summary(pretask_cleaned)
+table(pretask_cleaned$Hast.du.bereits.Erfahrung.mit.der.Verwendung.von.OpenStreetMap.)
+table(pretask_cleaned$Warst.du.schon.einmal.in.Erlangen.)
+as.data.frame(table(pretask_cleaned$Warst.du.schon.einmal.in.Ingolstadt.))
+descriptive_stats(pretask_cleaned$Wie.gut.kennst.du.dich.in.Erlangen.aus.)
+descriptive_stats(pretask_cleaned$Wie.gut.kennst.du.dich.in.Ingolstadt.aus.)
+
+
 summary(merged_data)
 descriptive_stats(merged_data$duration)
 
 # descriptive statistics for duration over all conditions for this variable
-by(merged_data$duration, merged_data$Condition, fun.ct)
+by(merged_data$duration, merged_data$Condition, descriptive_stats)
 
-
+#length(which(merged_data$Entscheidung.insgesamt == "OSM"))
+#length(which(merged_data$Entscheidung.insgesamt == "Haus am See"))
+table(merged_data$Entscheidung.insgesamt)
 
 ################ Test preconditions #################
 
@@ -202,3 +264,26 @@ plot_new2 = ggplot(tp1, aes(x=Anwendung, y=duration)) + xlab(colnames(tp1)) + yl
 plot_new2
 
 
+###########
+#TODO er will hier unbedingt zahlen, sonst gehts nicht
+for(i in c("duration", "correctRatio")) {
+  plot_data = data.frame(x=merged_data[,i], y=merged_data$Condition)
+  y_name = i
+  x_name = 'Condition'
+  print(paste('correlating ', x_name, ' with ', y_name))
+  
+  # Scatterplot with linear model
+  #plot = ggplot(plot_data, aes(x=x, y=y)) + xlab(x_name) + ylab(y_name) + geom_point() + geom_smooth(method = 'lm')
+  #print(plot)
+  
+  # Boxplot
+  plot = ggplot(merged_data, aes(x=Condition, y=merged_data[,i])) + xlab(x_name) + ylab(y_name) + geom_boxplot() #geom_boxplot(outlier.shape = NA)
+  print(plot)
+  
+  #Boxplot ohne Ausreißer
+  boxplot(merged_data[,i] ~ merged_data$Condition, xlab = x_name, ylab = y_name, outline = FALSE)
+  
+  
+  #TODO hat untersch. dimens:
+  # print(cor.test(merged_data[,i], merged_data$Condition))
+}
