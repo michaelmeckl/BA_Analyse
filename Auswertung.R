@@ -22,12 +22,35 @@ calcDuration = function (start, end) {
 
 ################## setup ######################
 
+##### TODO die qualitativen Daten müssen als separate Tabelle eingelesen und am besten in jeder Zelle nur OSM oder eigeneAnwendung
+post_data = read.csv2("./post_data.csv", sep=";")
+
+post_data_cleaned = select(post_data, -Heatmap...Maskierung)
+
 data = read.csv2("./data.csv", sep=";")
 
-##### TODO die qualitativen Daten müssen als separate Tabelle eingelesen und am besten in jeder Zelle nur OSM oder eigeneAnwendung
+# split the condition column into 3 separate ones but also keep the old column
+splitted_condition = data %>% separate(Condition, c("Anwendung", "Stadt", "Task"), sep="-")
+data = cbind(data, select(splitted_condition, Anwendung, Stadt, Task)) %>% .[c(1, 2, 7:9, 3:6)]
+
+# remove trailing and leading whitespaces from new columns
+data$Stadt = lapply(data$Stadt, trimws)
+data$Anwendung = lapply(data$Anwendung, trimws)
+data$Task = lapply(data$Task, trimws)
+
+# add the overall places for each condition as a new column 
+data["Places.Overall"] <- NA
+data$Places.Overall[data$Stadt == "Erlangen" & data$Task == "A"] <- 3
+data$Places.Overall[data$Stadt == "Erlangen" & data$Task == "B"] <- 13
+data$Places.Overall[data$Stadt == "Ingolstadt" & data$Task == "A"] <- 3
+data$Places.Overall[data$Stadt == "Ingolstadt" & data$Task == "B"] <- 8
+
+# debugging
+is.numeric(data$Correct.Places)
+is.numeric(data$Places.Overall)
 
 # calculate the ratio of correct places in percent
-data$correctRatio = (data$Correct.Places / data$Places.Overall ) * 100
+data = transform(data, correctRatio =  (data$Correct.Places / data$Places.Overall ) * 100)
 
 # calculate the difference between each start and end time in seconds
 data$duration = calcDuration(data$Start, data$End)
@@ -35,15 +58,15 @@ data$duration = calcDuration(data$Start, data$End)
 # remove the now obsolete columns
 cleaned_data = select(data, -Start, -End, -Places.Overall, -Correct.Places)
 
+merged_data = cbind(cleaned_data, select(post_data_cleaned, -Proband))
+
+
 # split per subject
-tp1 = subset(cleaned_data, Proband == "P1")
-tp2 = subset(cleaned_data, Proband == "P2")
+tp1 = subset(merged_data, Proband == "1")
+tp2 = subset(merged_data, Proband == "2")
 
 
 ###### TODO:
-# - sollen die conditions aufgesplittet werden am + ? dann hätte ich 3 IVs 
-cleaned_data = cleaned_data %>% separate(Condition, c("Anwendung", "Stadt", "Task"), sep="-")
-
 # - ist es vllt relevant wofür sich die leute letztlich entschieden als eigene Spalte -> also osm oder eigene???
 
 
@@ -51,15 +74,16 @@ cleaned_data = cleaned_data %>% separate(Condition, c("Anwendung", "Stadt", "Tas
 
 ### to long-format
 
-#cleaned_data$Proband <- as.factor(cleaned_data$Proband)
+#merged_data$Proband <- as.factor(merged_data$Proband)
 
-shorter_data = select(cleaned_data, Proband, Condition, duration, correctRatio)
-shorter_data_long = gather(shorter_data, key, value, Condition:correctRatio)
+shorter_data = select(merged_data, Proband, Condition, duration, correctRatio)
+shorter_data_long = gather(shorter_data, key, value, duration:correctRatio)
+shorter_data_long_alternativ = gather(shorter_data, key, value, Condition:correctRatio)
 
 
 ### filter and combine per condition (only take duration and correctRatio)
-condition1 <- subset(cleaned_data, Condition == "EigeneAnwendung + Erlangen + A") %>% select(., Condition, duration, correctRatio)
-condition2 <- subset(cleaned_data, Condition == "EigeneAnwendung + Erlangen + B") %>% select(., Condition, duration, correctRatio)
+condition1 <- subset(merged_data, Condition == "EigeneAnwendung + Erlangen + A") %>% select(., Condition, duration, correctRatio)
+condition2 <- subset(merged_data, Condition == "EigeneAnwendung + Erlangen + B") %>% select(., Condition, duration, correctRatio)
 
 nav_bind <- rbind(condition1, condition2)
 nav_bind_table <- table(nav_bind$duration, nav_bind$correctRatio)
@@ -69,11 +93,11 @@ nav_bind_table
 
 ################ Descriptive Statistics #################
 
-summary(cleaned_data)
-descriptive_stats(cleaned_data$duration)
+summary(merged_data)
+descriptive_stats(merged_data$duration)
 
 # descriptive statistics for duration over all conditions for this variable
-by(cleaned_data$duration, cleaned_data$Condition, fun.ct)
+by(merged_data$duration, merged_data$Condition, fun.ct)
 
 
 
@@ -97,7 +121,7 @@ skewness(tp1$duration) # -0.21 -> fast 0, also relativ normalverteilt
 # > 0.5 / nicht signifikant heißt Varianzhomogenität!
 
 # leveneTest(studienleistung4$Errors ~ interaction(studienleistung4$InterfaceType, studienleistung4$Experience), center = median)
-leveneTest(cleaned_data$duration ~ cleaned_data$Condition)
+leveneTest(merged_data$duration ~ merged_data$Condition)
 
 
 
@@ -111,8 +135,8 @@ leveneTest(cleaned_data$duration ~ cleaned_data$Condition)
 
 ### logistische Regression
 #log_model = glm(train$trust_as_boole ~ negative_opinion_phrases + weak_subj_words + biased_words + NUM + PART + PUNCT, data = train[, -c(1,31,34:35)], family = binomial(link="logit"))
-log_model = glm(duration ~ Condition, data = cleaned_data)
-#TODO: log_model = glm(duration ~ Anwendung * Stadt * Task, data = cleaned_data)
+log_model = glm(duration ~ Condition, data = merged_data)
+#TODO: log_model = glm(duration ~ Anwendung * Stadt * Task, data = merged_data)
 
 anova(log_model, test = 'Chisq')
 summary(log_model) # AIC: 272.77
@@ -128,8 +152,8 @@ summary(log_model) # AIC: 272.77
 # unabhängige variable needs to be factor is.factor
 
 # modell erstellen
-#model <- aov(data=cleaned_data, duration ~ Condition)
-model <- aov(data=cleaned_data, duration ~ Anwendung * Stadt * Task) # DV ~ IV +|* IV
+#model <- aov(data=merged_data, duration ~ Condition)
+model <- aov(data=merged_data, duration ~ Anwendung * Stadt * Task) # DV ~ IV +|* IV
 
 # long: model <- aov(data=shorter_data_long, key ~ value)  
 
@@ -147,25 +171,34 @@ plot(model)
 ############### Plots / Histogramme ###################
 
 ### Histogramm
-table(cleaned_data$duration)
+table(merged_data$duration)
 #png(filename="./Plots/hist_duration.png")
 hist_duration <- barplot(tp1$duration ~ tp1$Condition, main="Task durations over all participants", 
-                         xlab=colnames(cleaned_data$Proband)[i], ylab="Duration (in seconds)", las=2, legend=TRUE,
+                         xlab=colnames(merged_data$Proband), ylab="Duration (in seconds)", las=2, legend=TRUE,
                          col="orange", horiz = FALSE, space=0.8, cex.axis="0.7", cex.names="0.9")
 #dev.off()
 
 
 ### Bar Chart
-ggplot(data = cleaned_data, aes(x = Condition, y=duration)) + geom_bar(aes(fill=Condition), position="dodge", stat="identity") 
+ggplot(data = merged_data, aes(x = Condition, y=duration)) + geom_bar(aes(fill=Condition), position="dodge", stat="identity") 
 #ggsave("./Plots/bar_plot.png")
 
 
 ### Boxplots
 
-plot = ggplot(cleaned_data, aes(x=cleaned_data[,i], y=duration)) + xlab(colnames(cleaned_data)[i]) + ylab("Duration (in seconds)") + geom_boxplot()
+plot = ggplot(merged_data, aes(x=merged_data, y=duration)) + xlab(colnames(merged_data)) + ylab("Duration (in seconds)") + geom_boxplot()
 plot
 
-plot_2 <- ggplot(data=cleaned_data, aes(x = cleaned_data[,i], y= duration)) + geom_boxplot() +  theme_bw() + 
+plot_2 <- ggplot(data=cleaned_data, aes(x = Proband, y= duration, group=1)) + geom_boxplot() +  theme_bw() + 
   theme(panel.grid.minor.y = element_blank(), panel.grid.major.x = element_blank()) + ggtitle("Duration for both participants")
 plot_2
 # ggsave("./Plots/boxplot.png")
+
+
+# plot time development over conditions for tp1
+plot_new = ggplot(tp1, aes(x=Anwendung, y=duration)) + xlab(colnames(tp1)) + ylab("Duration (in seconds)") + geom_point(aes(colour = factor(Condition)))
+plot_new
+plot_new2 = ggplot(tp1, aes(x=Anwendung, y=duration)) + xlab(colnames(tp1)) + ylab("Duration (in seconds)") + geom_count(aes(colour = factor(Condition)))
+plot_new2
+
+
