@@ -31,6 +31,8 @@ library(moments)
 # - theoretisch auch Kombis mit Task und Stadt möglich, aber hilft das was?
 # - Auswirkung der Condition allgemein auf Duration und CorrectRatio
 # - Gab es irgendjemanden, der bei einer aufgabe keinen ort mit einer anwendung gefunden hat?? Ansonsten min und max vllt?
+# - Timeseries pro Participant über die duration beider anwendungen plotten, um rauszufinden ob sie bei mir schneller wurden (also ein Lerneffekt da war)?
+# - bevorzugten leute mit osm vorerfahrung die manuelle suche oder OSM ?
 #####################
 
 
@@ -78,9 +80,9 @@ data$Task = lapply(data$Task, trimws)
 # add the overall places for each condition as a new column 
 data["Places.Overall"] <- NA
 data$Places.Overall[data$Stadt == "Erlangen" & data$Task == "A"] <- 3
-data$Places.Overall[data$Stadt == "Erlangen" & data$Task == "B"] <- 12
+data$Places.Overall[data$Stadt == "Erlangen" & data$Task == "B"] <- 13
 data$Places.Overall[data$Stadt == "Ingolstadt" & data$Task == "A"] <- 3
-data$Places.Overall[data$Stadt == "Ingolstadt" & data$Task == "B"] <- 8
+data$Places.Overall[data$Stadt == "Ingolstadt" & data$Task == "B"] <- 9
 
 # debugging
 is.numeric(data$Correct.Places)
