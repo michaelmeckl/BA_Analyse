@@ -1,5 +1,6 @@
 library(dplyr)
 library(car)
+library(ggplot2)
 library(tidyverse)
 library(lubridate)
 library(moments)
@@ -33,6 +34,7 @@ library(moments)
 # - Gab es irgendjemanden, der bei einer aufgabe keinen ort mit einer anwendung gefunden hat?? Ansonsten min und max vllt?
 # - Timeseries pro Participant über die duration beider anwendungen plotten, um rauszufinden ob sie bei mir schneller wurden (also ein Lerneffekt da war)?
 # - bevorzugten leute mit osm vorerfahrung die manuelle suche oder OSM ?
+# - wo mehr Fehler gemacht?
 #####################
 
 
@@ -53,13 +55,13 @@ calcDuration = function (start, end) {
 
 pretask_answers = read.csv("./Pre-task Questionnaire(Antworten).csv")
 data = read.csv2("./data.csv")
-post_answers = read.csv2("./post_data.csv")
+post_answers = read.csv2("./Posttask-Answers.csv")
 
 
-################## setup ######################
+################## tidy data ###################
 
-# remove unnecessary column from post data
-post_data_cleaned = select(post_data, -Heatmap...Maskierung)
+#TODO useless at the moment
+post_data_cleaned = complete(post_answers)
 
 # remove the participants 1-4 and 6-8 :(
 # and columns that only have pure qualitative data
@@ -72,10 +74,13 @@ nrow(pretask_cleaned)  # should be 16!
 splitted_condition = data %>% separate(Condition, c("Anwendung", "Stadt", "Task"), sep="-")
 data = cbind(data, select(splitted_condition, Anwendung, Stadt, Task)) %>% .[c(1, 2, 7:9, 3:6)]
 
-# remove trailing and leading whitespaces from new columns
+# remove trailing and leading whitespaces from new columns and convert them back to characters
 data$Stadt = lapply(data$Stadt, trimws)
+data$Stadt = as.character(data$Stadt)
 data$Anwendung = lapply(data$Anwendung, trimws)
+data$Anwendung = as.character(data$Anwendung)
 data$Task = lapply(data$Task, trimws)
+data$Task = as.character(data$Task)
 
 # add the overall places for each condition as a new column 
 data["Places.Overall"] <- NA
@@ -97,8 +102,23 @@ data$duration = calcDuration(data$Start, data$End)
 # remove the now obsolete columns
 cleaned_data = select(data, -Start, -End, -Places.Overall, -Correct.Places)
 
-merged_data = cbind(cleaned_data, select(post_data_cleaned, -Proband))
+merged_data = left_join(cleaned_data, post_data_cleaned, by = "Proband")
 
+
+# add pretask knowledge
+pretask_cleaned$Proband <- seq.int(nrow(pretask_cleaned)) # add row number as proband id so it can be joined
+merged_data = left_join(merged_data, pretask_cleaned, by = "Proband")
+
+# rename column and replace yes with 1 and no with 0
+names(merged_data)[names(merged_data) == 'Warst.du.schon.einmal.in.Erlangen.'] <- 'Erlangen'
+merged_data$Erlangen = pretask_cleaned$Warst.du.schon.einmal.in.Erlangen.
+merged_data$Erlangen = merged_data[merged_data$Erlangen == "Ja"] = 1
+merged_data$Erlangen = merged_data[merged_data$Erlangen == "Nein"] = 0
+
+#TODO für ingolstadt auch noch
+
+
+############# split in separate data frames #############
 
 # split per subject
 tp1 = subset(merged_data, Proband == "1")
@@ -107,17 +127,32 @@ tp2 = subset(merged_data, Proband == "2")
 # or group and calculate mean per group
 grp_tp = group_by(merged_data, Proband) %>% summarise(., avg = mean(duration), sd=sd(duration))
 
+# get all mean values for every condition per participant
+by_Proband_Anwendung = group_by(merged_data, Proband, Anwendung) %>%
+  summarise(., avg_duration = mean(duration), sd_duration=sd(duration), avg_correctRatio = mean(correctRatio), sd_correctRatio=sd(correctRatio))
+by_Proband_Anwendung
+
+#boxplot(avg_duration ~ Proband + Anwendung, data=by_Proband_Anwendung, main="Duration over conditions", cex.axis=0.5)
+
+# Vergleich mean duration und correctRatio pro Anwendung über alle Teilnehmer 
+# als Boxplot
+ggplot(by_Proband_Anwendung, aes(x=Anwendung, y=avg_duration, fill=Anwendung)) + geom_boxplot()
+ggplot(by_Proband_Anwendung, aes(x=Anwendung, y=avg_correctRatio, fill=Anwendung)) + geom_boxplot()
+# und als Barchart
+ggplot(by_Proband_Anwendung) + geom_bar(aes(x=Proband, y=avg_duration, fill=Anwendung), stat='identity', position = "dodge") +
+  labs(x = "Participant", y="Average Duration in s") + ggtitle("Average Duration over all Participants")
+ggplot(by_Proband_Anwendung) + geom_bar(aes(x=Proband, y=avg_correctRatio, fill=Anwendung), stat='identity', position = "dodge")
 
 
-### TODO geht erst wenn gleiche größe
 
-# add pretask knowledge
-#merged_data = cbind(merged_data, select(pretask_cleaned, Warst.du.schon.einmal.in.Erlangen., Warst.du.schon.einmal.in.Ingolstadt.)) 
-merged_data$Erlangen = pretask_cleaned$Warst.du.schon.einmal.in.Erlangen.
-merged_data$Erlangen = merged_data[merged_data$Erlangen == "Ja"] = 1
-merged_data$Erlangen = merged_data[pretask_cleaned$Warst.du.schon.einmal.in.Erlangen. == "Nein"] = 0
+### filter and combine per condition (only take duration and correctRatio)
+condition1 <- subset(merged_data, Condition == "EigeneAnwendung - Erlangen - A") %>% select(., Condition, duration, correctRatio)
+condition2 <- subset(merged_data, Condition == "EigeneAnwendung - Erlangen - B") %>% select(., Condition, duration, correctRatio)
 
-#TODO für ingolstadt auch noch
+nav_bind <- rbind(condition1, condition2)
+nav_bind_table <- table(nav_bind$duration, nav_bind$correctRatio)
+nav_bind_table
+
 
 
 ################ Convert to other formats #################
@@ -130,14 +165,17 @@ shorter_data = select(merged_data, Proband, Condition, duration, correctRatio)
 shorter_data_long = gather(shorter_data, key, value, duration:correctRatio)
 shorter_data_long_alternativ = gather(shorter_data, key, value, Condition:correctRatio)
 
+test = gather(merged_data, key, value, duration)
+test2 = gather(merged_data, key, value, correctRatio)
+test3 = gather(merged_data, key, value, duration, correctRatio)
 
-### filter and combine per condition (only take duration and correctRatio)
-condition1 <- subset(merged_data, Condition == "EigeneAnwendung + Erlangen + A") %>% select(., Condition, duration, correctRatio)
-condition2 <- subset(merged_data, Condition == "EigeneAnwendung + Erlangen + B") %>% select(., Condition, duration, correctRatio)
+ggplot(test2, aes(x=as.factor(Proband), y=value, fill=Anwendung)) + geom_boxplot()
+ggplot(test2, aes(x=as.factor(Proband), y=value, fill=Anwendung)) + geom_boxplot() + facet_wrap(~Anwendung)
+ggplot(test3, aes(x=as.factor(Proband), y=value, fill=Anwendung)) + geom_boxplot() + facet_wrap(~key, scales = "free")
+ggplot(test, aes(x=as.factor(Proband), y=value, fill=Anwendung)) + geom_boxplot()
 
-nav_bind <- rbind(condition1, condition2)
-nav_bind_table <- table(nav_bind$duration, nav_bind$correctRatio)
-nav_bind_table
+ggplot(test) + geom_bar(aes(x=Proband, y=value, fill=Anwendung), stat='identity', position = "dodge")
+ggplot(test2) + geom_bar(aes(x=Proband, y=value, fill=Anwendung), stat='identity', position = "dodge")
 
 
 
@@ -154,16 +192,23 @@ as.data.frame(table(pretask_cleaned$Warst.du.schon.einmal.in.Ingolstadt.))
 descriptive_stats(pretask_cleaned$Wie.gut.kennst.du.dich.in.Erlangen.aus.)
 descriptive_stats(pretask_cleaned$Wie.gut.kennst.du.dich.in.Ingolstadt.aus.)
 
+table(pretask_answers$Welches.Betriebssystem.verwendest.du.)
 
-summary(merged_data)
+# Post-question answers:
+table(post_data_cleaned$Besser.zurechtgekommen)
+table(post_data_cleaned$Zufriedenheit)
+table(post_data_cleaned$Intuitivität)
+table(post_data_cleaned$Nutzung.im.Alltag)
+
+
+#summary(merged_data)
 descriptive_stats(merged_data$duration)
 
 # descriptive statistics for duration over all conditions for this variable
 by(merged_data$duration, merged_data$Condition, descriptive_stats)
 
-#length(which(merged_data$Entscheidung.insgesamt == "OSM"))
-#length(which(merged_data$Entscheidung.insgesamt == "Haus am See"))
-table(merged_data$Entscheidung.insgesamt)
+#length(which(merged_data$Besser.zurechtgekommen == "OSM"))
+table(merged_data$Besser.zurechtgekommen)
 
 ################ Test preconditions #################
 
@@ -181,9 +226,22 @@ skewness(tp1$duration) # -0.21 -> fast 0, also relativ normalverteilt
 # schiefe und excess < 1 völlig unbedenklich
 
 
+### Ausreißer
+
+table(c(abs(scale(merged_data$duration))) < 4 )  # keine Ausreißer, wenn ca. kleiner 4 (für größere Datenmenge > 80 wie bei mir)
+# -> keine Ausreißer
+outlier_values <- boxplot.stats(merged_data$duration)$out 
+boxplot(merged_data$duration, main="merged_data$duration", boxwex=0.1)
+mtext(paste("Outliers: ", paste(outlier_values, collapse=", ")), cex=0.6)
+# -> 10 Ausreißer (sollte aber bei der Größe der Datenmenge nicht wirklich schlimm sein)
+
+#pairs(~merged_data$duration + merged_data$correctRatio)
+
+
 ### Varianzhomogenität  
 # > 0.5 / nicht signifikant heißt Varianzhomogenität!
 
+# TODO
 # leveneTest(studienleistung4$Errors ~ interaction(studienleistung4$InterfaceType, studienleistung4$Experience), center = median)
 leveneTest(merged_data$duration ~ merged_data$Condition)
 
@@ -218,11 +276,36 @@ summary(log_model) # AIC: 272.77
 # modell erstellen
 #model <- aov(data=merged_data, duration ~ Condition)
 model <- aov(data=merged_data, duration ~ Anwendung * Stadt * Task) # DV ~ IV +|* IV
-
 # long: model <- aov(data=shorter_data_long, key ~ value)  
 
 #summary(model)
 anova(model)
+
+model2 = aov(data = merged_data, duration ~ Condition)
+summary(model2)
+
+
+model3 = aov(data = by_Proband_Anwendung, avg_duration ~ Anwendung)
+summary(model3) # sinifikanter einfluss der Anwendung auf die Duration
+model4 = aov(data = by_Proband_Anwendung, avg_correctRatio ~ Anwendung)
+summary(model4) # sinifikanter einfluss der Anwendung auf die correctRatio
+
+
+
+#interaction.plot(by_Proband_Anwendung$Anwendung, by_Proband_Anwendung$avg_duration, by_Proband_Anwendung$avg_correctRatio, xlab = "InterfaceType", ylab = "mean of Errors", trace.label = "Experience", col = 3:4)
+
+
+#pairwise.t.test(merged_data$duration, merged_data$Anwendung, p.adj = "bonf", paired = TRUE)
+pairwise.t.test(merged_data$duration, merged_data$Anwendung, p.adj = "bonf")
+
+# geht nicht, erwarte binäres Argument: t.test(by_Proband_Anwendung$avg_duration, by_Proband_Anwendung$Anwendung, paired = TRUE)
+
+
+# TODO was sagt mir das genau?
+TukeyHSD(model2)
+TukeyHSD(model3)
+
+
 
 # Anova() aus car package stattdessen für typ 2 ergebnisse?
 Anova(model)  # sind auch die gleichen ergebnisse ...
@@ -233,6 +316,9 @@ plot(model)
 
 
 ############### Plots / Histogramme ###################
+
+# TODO nur die mittelwerte plotten pro anwendung / condition anstatt alle ??
+
 
 ### Histogramm
 table(merged_data$duration)
@@ -264,6 +350,10 @@ plot_new = ggplot(tp1, aes(x=Anwendung, y=duration)) + xlab(colnames(tp1)) + yla
 plot_new
 plot_new2 = ggplot(tp1, aes(x=Anwendung, y=duration)) + xlab(colnames(tp1)) + ylab("Duration (in seconds)") + geom_count(aes(colour = factor(Condition)))
 plot_new2
+
+boxplot(duration ~ Condition, data=merged_data, main="Duration over conditions", cex.axis=0.5)
+ggplot(aes(x=Condition, y = duration), data=merged_data, main="Duration over conditions") + 
+  geom_boxplot(show.legend = TRUE) + theme(axis.text.x  = element_text(angle=45, vjust=0.5))
 
 
 ###########
