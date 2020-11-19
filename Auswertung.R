@@ -186,7 +186,11 @@ ggplot(pretask_analysis, aes(x=stringr::str_wrap(Hast.du.bereits.Erfahrung.mit.d
   theme(legend.position="bottom") +
   xlab(NULL)
 
-ggplot(pretask_analysis, aes(x=nchar(Hast.du.bereits.Erfahrung.mit.der.Verwendung.von.OpenStreetMap.), y=avg_dur, fill=Hast.du.bereits.Erfahrung.mit.der.Verwendung.von.OpenStreetMap.)) + geom_bar(stat = "identity")
+lv = length(unique(pretask_analysis$Hast.du.bereits.Erfahrung.mit.der.Verwendung.von.OpenStreetMap.))
+pretask_analysis %>% summarise(n())
+ggplot(pretask_analysis, aes(x=Hast.du.bereits.Erfahrung.mit.der.Verwendung.von.OpenStreetMap., y=avg_dur, fill=Hast.du.bereits.Erfahrung.mit.der.Verwendung.von.OpenStreetMap.)) +
+  geom_bar(stat = "identity")  + 
+  scale_x_discrete(labels = c('Ein bisschen','Sehr oft','Nie', "sehr wenig"))
 
 
 
@@ -194,9 +198,6 @@ regModel = lm(data=pretask_analysis, avg_dur ~ Wie.gut.kennst.du.dich.in.Erlange
 #aovModel = aov(data=pretask_analysis, avg_dur ~ Hast.du.bereits.Erfahrung.mit.der.Verwendung.von.OpenStreetMap.)
 summary(regModel)
 anova(regModel) # kein signifikatner Einfluss auf die duration
-
-
-
 
 
 
@@ -235,6 +236,10 @@ pretask_analysis$Besser.zurechtgekommen <- factor(pretask_analysis$Besser.zurech
 logModel <- glm(Besser.zurechtgekommen ~  ., data = pretask_analysis, family = "binomial")
 anova(logModel, test = 'Chisq')
 #summary(logModel)
+
+
+
+
 
 
 
