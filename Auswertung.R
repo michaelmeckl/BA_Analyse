@@ -55,21 +55,17 @@ calcDuration = function (start, end) {
 
 ############### load data #####################
 
-pretask_answers = read.csv("./Pre-task Questionnaire(Antworten).csv")
-data = read.csv2("./data.csv")
+pretask_answers = read.csv2("./Pretask-Answers.csv")
+data = read.csv2("./Data.csv")
 post_answers = read.csv2("./Posttask-Answers.csv")
 
 
 ################## tidy data ###################
 
-#TODO useless at the moment
-post_data_cleaned = complete(post_answers)
-
-# remove the participants 1-4 and 6-8 :(
-# and columns that only have pure qualitative data
-participants = pretask_answers %>% .[-c(1:4, 6:9),] %>% .[c(9:11)]
-pretask_cleaned = pretask_answers %>% .[-c(1:4, 6:9),] %>% .[c(2:6)]
-nrow(pretask_cleaned)  # should be 16!
+participants = pretask_answers %>% .[c(8:10)]
+# remove columns that only have pure qualitative data
+pretask_cleaned = pretask_answers %>% .[c(1:5)]
+#nrow(pretask_cleaned)  # should be 16!
 
 
 # split the condition column into 3 separate ones but also keep the old column
@@ -104,7 +100,7 @@ data$duration = calcDuration(data$Start, data$End)
 # remove the now obsolete columns
 cleaned_data = select(data, -Start, -End, -Places.Overall, -Correct.Places)
 
-merged_data = left_join(cleaned_data, post_data_cleaned, by = "Proband")
+merged_data = left_join(cleaned_data, post_answers, by = "Proband")
 
 
 # add pretask knowledge
@@ -161,7 +157,7 @@ nav_bind_table
 
 ##### Auswirkungen des vorwissens: ########
 pretask_analysis = group_by(merged_data, Proband) %>% summarise(., avg_dur = mean(duration), sd_dur=sd(duration), avg_ratio = mean(correctRatio), sd_ratio=sd(correctRatio))
-pretask_analysis = left_join(pretask_analysis, pretask_cleaned, by="Proband") %>% left_join(., post_data_cleaned, by="Proband")
+pretask_analysis = left_join(pretask_analysis, pretask_cleaned, by="Proband") %>% left_join(., post_answers, by="Proband")
 
 descriptive_stats(pretask_analysis)
 by(pretask_analysis$avg_dur, pretask_analysis$Hast.du.bereits.Erfahrung.mit.der.Verwendung.von.OpenStreetMap., descriptive_stats)
@@ -244,14 +240,14 @@ anova(logModel, test = 'Chisq')
 
 
 ##### Auswirkungen auf answers in posttask: ########
-frqCol <- sapply(post_data_cleaned, table)
+frqCol <- sapply(post_answers, table)
 apply(frqCol, 1, max)
-apply(post_data_cleaned,MARGIN=1,table)
+apply(post_answers,MARGIN=1,table)
 
 
 # für die duration
 tabelle_aggregated = group_by(merged_data, Proband, Anwendung) %>% summarise(., avg_duration = mean(duration))
-tabelle_aggregated = left_join(tabelle_aggregated, post_data_cleaned, by = "Proband")  %>% select(., c(1:4))
+tabelle_aggregated = left_join(tabelle_aggregated, post_answers, by = "Proband")  %>% select(., c(1:4))
 
 tabelle_wide = spread(tabelle_aggregated, Anwendung, avg_duration)
 
@@ -278,7 +274,7 @@ summary(logModel) # nichts signifikantes
 
 #das gleiche für die correctRatio
 tabelle_aggregated2 = group_by(merged_data, Proband, Anwendung) %>% summarise(., avg_correctRatio = mean(correctRatio))
-tabelle_aggregated2 = left_join(tabelle_aggregated2, post_data_cleaned, by = "Proband")  %>% select(., c(1:4))
+tabelle_aggregated2 = left_join(tabelle_aggregated2, post_answers, by = "Proband")  %>% select(., c(1:4))
 
 tabelle_wide2 = spread(tabelle_aggregated2, Anwendung, avg_correctRatio)
 
@@ -351,10 +347,10 @@ descriptive_stats(pretask_cleaned$Wie.gut.kennst.du.dich.in.Ingolstadt.aus.)
 table(pretask_answers$Welches.Betriebssystem.verwendest.du.)
 
 # Post-question answers:
-table(post_data_cleaned$Besser.zurechtgekommen)
-table(post_data_cleaned$Zufriedenheit)
-table(post_data_cleaned$Intuitivität)
-table(post_data_cleaned$Nutzung.im.Alltag)
+table(post_answers$Besser.zurechtgekommen)
+table(post_answers$Zufriedenheit)
+table(post_answers$Intuitivität)
+table(post_answers$Nutzung.im.Alltag)
 
 
 #summary(merged_data)
