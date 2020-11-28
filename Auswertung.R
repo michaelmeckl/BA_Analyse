@@ -1,3 +1,8 @@
+################################################################################
+# early version with a lot of tests etc. 
+# the real analysis was performed in the final_analysis - File
+################################################################################
+
 library(dplyr)
 library(car)
 library(ggplot2)
@@ -6,38 +11,7 @@ library(lubridate)
 library(moments)
 library(rstatix)
 library(lme4)
-
-################################################################################
-
-#### Variablen:
-
-## Abhängige Variablen:
-# - Duration (intervallskaliert)
-# - correctRatio (verhältnisskaliert)
-# - Post-Anwtorten (dichotom, bzw. nominalskaliert)
-
-# (- wrong answers) -> sinnvoll????
-
-## Unabhängige Variablen:
-# - Condition (nominal)
-# oder alle 3: Stadt, Anwendung, Task (alle nominal)
-
-###############
-
-
-#### Fragestellungen:
-# - ist ein Proband schneller geworden, je öfter er eine Anwendung benutzt hat (grafisch plotten pro Anwendung?)
-# - unterschied bei 1. Nutzung und bei forfolgenden bzgl. der Duration? -> getrennt analysieren??
-# - Durschnitt und SD über Duration und correctRatio insgesamt und pro Teilnehmer
-# - Unterschiede bei Duration und der correctRatio für Post-Antworten (Haus am See oder OSM) ???????????????? (hängt das wirklich überhaupt zusammen?)
-# - bei welcher Anwendung schneller im Durschnitt
-# - theoretisch auch Kombis mit Task und Stadt möglich, aber hilft das was?
-# - Auswirkung der Condition allgemein auf Duration und CorrectRatio
-# - Gab es irgendjemanden, der bei einer aufgabe keinen ort mit einer anwendung gefunden hat?? Ansonsten min und max vllt?
-# - Timeseries pro Participant über die duration beider anwendungen plotten, um rauszufinden ob sie bei mir schneller wurden (also ein Lerneffekt da war)?
-# - bevorzugten leute mit osm vorerfahrung die manuelle suche oder OSM ?
-# - wo mehr Fehler gemacht?
-#####################
+library(ggpubr)
 
 
 ################## functions ######################
@@ -126,15 +100,95 @@ tp6 = subset(merged_data, Proband == "6")
 # or group and calculate mean per group
 grp_tp = group_by(merged_data, Proband) %>% summarise(., avg = mean(duration), sd=sd(duration))
 
+
+
+
 # get all mean values for every condition per participant
 by_Proband_Anwendung = group_by(merged_data, Proband, Anwendung) %>%
   summarise(., avg_duration = mean(duration), sd_duration=sd(duration), avg_correctRatio = mean(correctRatio), sd_correctRatio=sd(correctRatio))
+
+
+
+
+
+model <- aov(data=merged_data, duration ~ Anwendung * Stadt * Task + Error(Proband))
+summary(model)
+
+model2 <- aov(data=merged_data, correctRatio ~ Anwendung * Stadt * Task + Error(Proband))
+summary(model2)
+#TukeyHSD(model2, "Anwendung")
+
+# pairwise.t.test(merged_data$correctRatio, merged_data$Anwendung, p.adj = "none")
+
+
+
+by_Anwendung = group_by(merged_data, Anwendung) %>%
+  summarise(., avg_duration = mean(duration), sd_duration=sd(duration), avg_correctRatio = mean(correctRatio), sd_correctRatio=sd(correctRatio), 
+            se_correctRatio = sd(correctRatio)/sqrt(length(merged_data$Proband)), se_duration = sd(duration)/sqrt(length(merged_data$Proband)))
+
+
+ggplot(by_Anwendung, aes(x=Anwendung, y=avg_correctRatio, fill=Anwendung,  label = scales::percent(avg_correctRatio/100))) + 
+  geom_bar(show.legend=FALSE, stat='identity', width = 0.2, position = position_dodge(width=0.2)) + theme_bw() +
+  scale_y_continuous(limits = c(0,100)) + 
+  geom_text(position = position_dodge(width = .9),    # move to center of bars
+            vjust = -0.8,    # nudge above top of bar
+            size = 3) + 
+  xlab("Anwendung") +  ylab("Anteil korrekter Gebiete in %") + ggtitle("Durschnittlicher Anteil an richtigen Orten für beide Anwendungen")
+
+ggplot(by_Anwendung, aes(x=Anwendung, y=avg_duration, fill=Anwendung, label = round(avg_duration, digits = 1))) + 
+  geom_text(position = position_dodge(width = .9),    # move to center of bars
+            vjust = -0.8,    # nudge above top of bar
+            size = 3) + 
+  geom_bar(show.legend=FALSE, stat='identity', width = 0.2, position = position_dodge(width=0.2)) + theme_bw() +
+  xlab("Anwendung") +  ylab("benötigte Zeit in ms") + ggtitle("Durschnittlich benötigte Zeit pro Anwendung")
+
+
+by_Anwendung_long = gather(by_Anwendung, key, value, avg_duration, avg_correctRatio)
+
+
+plot_names <- c(
+  `Hospital#1` = "Some Hospital",
+  `Hospital#2` = "Another Hospital",
+  `Hospital#3` = "Hospital Number 3",
+  `Hospital#4` = "The Other Hospital"
+)
+
+ggplot(by_Anwendung_long, aes(x=Anwendung, y=value, fill=Anwendung)) + 
+  geom_bar(show.legend=FALSE, stat='identity', width = 0.2, position = position_dodge(width=0.2)) + theme_bw() + facet_wrap(~key,scales = "free_y")
+  #geom_errorbar(aes(ymin=avg_correctRatio-se_correctRatio, ymax=avg_correctRatio+se_correctRatio),  position=position_dodge(.7) , width=0.1, colour="orange", alpha=0.8, size=1)
+
+plot
+plot + ggsave("./t.svg", height = 7 , width = 7)
+
+
+# keinerlei korrelation
+cor.test(merged_data$duration, merged_data$correctRatio, method = "pearson")
+a1 = subset(merged_data, Anwendung == "EigeneAnwendung")
+a2 = subset(merged_data, Anwendung == "OSM")
+cor.test(a1$duration, a1$correctRatio, method = "pearson")
+cor.test(a2$correctRatio, a2$duration, method = "pearson")
+
+
+#TODO auf normalverteilung prüfen
+
+t.test(data=merged_data, duration ~ Anwendung, paired = TRUE, alternative = "two.sided")
+t.test(data=merged_data, correctRatio ~ Anwendung, paired = TRUE, alternative = "two.sided")
+
+
+v = xtabs(~Besser.zurechtgekommen + Hast.du.bereits.Erfahrung.mit.der.Verwendung.von.OpenStreetMap., data = pretask_analysis)
+as.data.frame(v)
+
+log_model2 = glm(Besser.zurechtgekommen ~ Hast.du.bereits.Erfahrung.mit.der.Verwendung.von.OpenStreetMap.,  family = binomial, data = pretask_analysis)
+anova(log_model2, test = 'Chisq')
+summary(log_model2)
+
+
 
 #boxplot(avg_duration ~ Proband + Anwendung, data=by_Proband_Anwendung, main="Duration over conditions", cex.axis=0.5)
 
 # Vergleich mean duration und correctRatio pro Anwendung über alle Teilnehmer 
 # als Boxplot
-ggplot(by_Proband_Anwendung, aes(x=Anwendung, y=avg_duration, fill=Anwendung)) + geom_boxplot()
+ggplot(by_Proband_Anwendung, aes(x=Anwendung, y=avg_duration, fill=Anwendung)) + geom_boxplot() + ggsave("./test.svg")
 ggplot(by_Proband_Anwendung, aes(x=Anwendung, y=avg_correctRatio, fill=Anwendung)) + geom_boxplot()
 # und als Barchart
 ggplot(by_Proband_Anwendung) + geom_bar(aes(x=Proband, y=avg_duration, fill=Anwendung), stat='identity', position = "dodge") +
@@ -213,7 +267,7 @@ ggplot(pretask_analysis, aes(x=Proband, y=avg_ratio, group=Hast.du.bereits.Erfah
 ### Auswirkung auf ergebnis
 pretask_analysis$Besser.zurechtgekommen <- factor(pretask_analysis$Besser.zurechtgekommen)
 logModel <- glm(Besser.zurechtgekommen ~ Hast.du.bereits.Erfahrung.mit.der.Verwendung.von.OpenStreetMap., data = pretask_analysis, family = "binomial")
-anova(logModel, test = 'Chisq')
+res = anova(logModel, test = 'Chisq')
 summary(logModel) # nicht signifikant für entscheidung
 
 pretask_analysis$Nutzung.im.Alltag <- factor(pretask_analysis$Nutzung.im.Alltag)
@@ -316,7 +370,7 @@ ggplot(test, aes(x=as.factor(Proband), y=value, fill=Anwendung)) + geom_boxplot(
 
 # neuer Boxplot:
 ggboxplot(test, x="Proband", y="value", fill = "Anwendung", palette = "npg", facet.by = "Anwendung", short.panel.labs = TRUE)
-
+ggboxplot(test2, x="Proband", y="value", fill = "Anwendung", palette = "npg", facet.by = "Anwendung", short.panel.labs = TRUE)
 
 sd_val = sd(test$value, na.rm = TRUE)
 se=sd_val/sqrt(length(test$value))
@@ -408,7 +462,7 @@ kurtosis(t1$avg_duration, na.rm = TRUE)
 skewness(t1$avg_duration, na.rm = TRUE)
 
 
-library(ggpubr)
+
 ggqqplot(by_Proband_Anwendung, "avg_duration", facet.by="Anwendung")
 
 
@@ -489,7 +543,6 @@ log_model = glm(duration ~ Condition, data = merged_data)
 
 anova(log_model, test = 'Chisq')
 summary(log_model) # AIC: 272.77
-
 
 ### Anova
 
@@ -599,6 +652,7 @@ ggplot(data = merged_data, aes(x = Condition, y=duration)) + geom_bar(aes(fill=C
 plot = ggplot(merged_data, aes(x=merged_data, y=duration)) + xlab(colnames(merged_data)) + ylab("Duration (in seconds)") + geom_boxplot()
 plot
 
+
 plot_2 <- ggplot(data=cleaned_data, aes(x = Proband, y= duration, group=1)) + geom_boxplot() +  theme_bw() + 
   theme(panel.grid.minor.y = element_blank(), panel.grid.major.x = element_blank()) + ggtitle("Duration for both participants")
 plot_2
@@ -646,15 +700,39 @@ for(i in c("duration", "correctRatio")) {
 tp1$Condition <- factor(tp1$Condition, levels = tp1$Condition)
 tp2$Condition <- factor(tp2$Condition, levels = tp2$Condition)
 
-ggplot(tp1, aes(x=Condition, y=duration, group= Anwendung, color=Anwendung)) + theme_classic() +
+
+merged_data$Condition = group_by(merged_data, Proband) %>% factor(.$Condition, levels = .$Condition)
+
+ggplot(merged_data, aes(x=Condition, y=duration, group= Condition, color=Anwendung)) + theme_classic() +
   geom_line() +
   geom_point() + 
   theme(axis.text.x  = element_text(angle=90, vjust=0.5))
 
-ggplot(tp1, aes(x=Anwendung, y=duration, group= Anwendung, color=Anwendung)) + theme_classic() +
-  geom_point() + 
-  theme(axis.text.x  = element_text(angle=90, vjust=0.5)) +
-  stat_summary(fun ="mean", colour="red", size="2", geom = "line")
+for(i in 1:5) {
+  tp = subset(merged_data, Proband == i)
+  tp$Condition <- factor(tp$Condition, levels = tp$Condition)
+  #plot_data = data.frame(x=merged_data[,i], y=merged_data$Condition)
+  plot = ggplot(tp, aes(x=Condition, y=duration, group= Anwendung, color=Anwendung)) + theme_classic() +
+    geom_line() +
+    geom_point() + 
+    ggtitle("Proband Nr.", i) +
+    theme(axis.text.x  = element_text(angle=90, vjust=0.5))
+  print(plot)
+}
+
+
+merged_data2 <- factor(merged_data$Condition, levels = unique(merged_data$Condition))
+merged_data3 = make.unique(as.character(merged_data$Condition), sep = "_")
+merged_data["nr"] <- seq(8) 
+
+ggplot(merged_data, aes(x=nr, y=duration, group= Anwendung, color=Anwendung)) + 
+  theme_classic() +
+  geom_line() +
+  geom_point() +
+  ggtitle("Benötigte Zeit in Sekunden pro Condition über alle Probanden") +
+  theme(legend.position="bottom",axis.title.x=element_blank(), axis.text.x=element_blank(),axis.ticks.x=element_blank(), axis.title.y=element_blank(), axis.ticks.y=element_blank()) +
+  facet_wrap(~Proband, ncol = 4)
+
 
 
 lm(data=merged_data, duration ~ time(Anwendung))
